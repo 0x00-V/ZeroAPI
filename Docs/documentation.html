@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZeroAPI Docs</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 900px;
+            margin: 40px auto;
+            line-height: 1.6;
+        }
+        code {
+            background-color: #eee;
+            padding: 4px 6px;
+            border-radius: 4px;
+            display: block;
+            margin-top: 6px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ZeroAPI Docs</h1>
+    </header>
+
+    <p>
+        Current endpoint
+        <strong><code>GET /docs</code></strong> 
+    </p>
+
+    <h3>Users</h3>
+
+    <p>
+        <strong>GET /users</strong> — List all users
+    </p>
+
+    <p>
+        <strong>POST /users/register</strong> — Register a user
+        <code>
+curl -X POST <span class="base-url"></span>/users/register \
+-H "Content-Type: application/json" \
+-d "{\"Name\":\"test\",\"Password\":\"test\"}"
+        </code>
+    </p>
+
+    <p>
+        <strong>POST /users/login</strong> — Authenticate as a user
+        <code>
+curl -X POST <span class="base-url"></span>/users/login \
+-H "Content-Type: application/json" \
+-d "{\"Name\":\"test\",\"Password\":\"test\"}"
+        </code>
+    </p>
+
+    <script>
+        const baseUrl = window.location.origin;
+
+        document.getElementById("baseUrl").textContent = baseUrl;
+
+        document.querySelectorAll(".base-url").forEach(el => {
+            el.textContent = baseUrl;
+        });
+    </script>
+</body>
+</html>
