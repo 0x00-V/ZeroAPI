@@ -54,11 +54,25 @@ curl -X POST <span class="base-url"></span>/users/login \
 -d "{\"Name\":\"test\",\"Password\":\"test\"}"
         </code>
     </p>
+    <h3>JWT Authentication</h3>
 
+    <p>
+        <strong>POST /users/login-jwt</strong> — Authenticate and receive a JWT
+        <code>
+curl -X POST <span class="base-url"></span>/users/login-jwt \
+-H "Content-Type: application/json" \
+-d "{\"Name\":\"test\",\"Password\":\"test\"}"
+        </code>
+    </p>
+    <p>
+        <strong>GET /users/account-jwt</strong> — Get current user info (requires JWT)
+        <code>
+curl <span class="base-url"></span>/users/account-jwt \
+-H "Authorization: Bearer YOUR_JWT_TOKEN"
+        </code>
+    </p>
     <script>
         const baseUrl = window.location.origin;
-
-        document.getElementById("baseUrl").textContent = baseUrl;
 
         document.querySelectorAll(".base-url").forEach(el => {
             el.textContent = baseUrl;
