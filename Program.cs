@@ -57,19 +57,19 @@ app.MapGet("/docs", (IWebHostEnvironment env) =>
 RouteGroupBuilder users = app.MapGroup("/users");
 users.MapGet("/", GetAllUsers);
 users.MapPost("/register", RegisterUser);
-users.MapPost("/login", UserLogin);
-users.MapPost("/login-jwt", JTWUserLogin);
-users.MapGet("/account-jwt", (ClaimsPrincipal user) =>
-{
-    var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-    var username = user.FindFirstValue(ClaimTypes.Name);
+users.MapPost("/login", Login);
+users.MapPost("/refresh", RefreshAccessToken);
+users.MapPost("/logout", LogoutRefreshToken);
 
-    return Results.Ok(new { userId, username });
+app.MapGet("/protected", (ClaimsPrincipal user) =>
+{
+    return Results.Ok(new
+    {
+        message = "You are authenticated",
+        claims = user.Claims.Select(c => new { c.Type, c.Value })
+    });
 })
 .RequireAuthorization();
-
-RouteGroupBuilder jwtSess = app.MapGroup("jwt_sess");
-
 
 using (var scope = app.Services.CreateScope())
 {
@@ -120,56 +120,56 @@ static async Task<IResult> RegisterUser(UserCreateDTO userDTO, UserContext db)
 );
 }
 
-
-static async Task<IResult> UserLogin(UserCreateDTO userDTO, UserContext db)
+static string GenerateRefreshToken()
 {
-    if (string.IsNullOrWhiteSpace(userDTO.Name)) return Results.BadRequest("Username required");
-    if (string.IsNullOrWhiteSpace(userDTO.Password)) return Results.BadRequest("Password required");
+    var bytes = RandomNumberGenerator.GetBytes(32);
+    return Convert.ToBase64String(bytes);
+}
 
-    
-    var user = await db.Users.SingleOrDefaultAsync(u => u.Name == userDTO.Name);
-    if(user is null) return Results.Unauthorized();
-
-    var hasher = new PasswordHasher<User>();
-
-    if (string.IsNullOrWhiteSpace(user.Password)) return Results.Unauthorized();
-    var result = hasher.VerifyHashedPassword(user, user.Password, userDTO.Password);
-    if (result == PasswordVerificationResult.Failed) return Results.Unauthorized();
-    if(result == PasswordVerificationResult.SuccessRehashNeeded)
-    {
-        user.Password = hasher.HashPassword(user, userDTO.Password);
-        await db.SaveChangesAsync();
-    }
-    return Results.Ok($"You have successfully authenticated as {userDTO.Name}");    
+static string Sha256(string input)
+{
+    var bytes = System.Text.Encoding.UTF8.GetBytes(input);
+    var hash = SHA256.HashData(bytes);
+    return Convert.ToBase64String(hash);
 }
 
 
-static async Task<IResult> JTWUserLogin(
+static string CreateAccessToken(User user, IConfiguration config, DateTime utcNow, int minutes = 30)
+{
+    var claims = new[]
+    {
+        new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+        new Claim(JwtRegisteredClaimNames.UniqueName, user.Name!),
+        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+    };
+    var key = new SymmetricSecurityKey(
+        System.Text.Encoding.UTF8.GetBytes(config["JwtConfig:Key"]!)
+    );
+    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+    var token = new JwtSecurityToken(
+        issuer: config["JwtConfig:Issuer"],
+        audience: config["JwtConfig:Audience"],
+        claims: claims,
+        expires: utcNow.AddMinutes(minutes),
+        signingCredentials: creds
+    );
+    return new JwtSecurityTokenHandler().WriteToken(token);
+}
+
+static async Task<IResult> Login(
     UserCreateDTO userDTO,
     UserContext db,
     IConfiguration configuration)
 {
-    if (string.IsNullOrWhiteSpace(userDTO.Name))
-        return Results.BadRequest("Username required");
+    if (string.IsNullOrWhiteSpace(userDTO.Name)) return Results.BadRequest("Username required");
+    if (string.IsNullOrWhiteSpace(userDTO.Password)) return Results.BadRequest("Password required");
 
-    if (string.IsNullOrWhiteSpace(userDTO.Password))
-        return Results.BadRequest("Password required");
-    var user = await db.Users
-        .AsTracking()
-        .SingleOrDefaultAsync(u => u.Name == userDTO.Name);
-
-    if (user is null)
-        return Results.Unauthorized();
+    var user = await db.Users.SingleOrDefaultAsync(u => u.Name == userDTO.Name);
+    if (user is null) return Results.Unauthorized();
 
     var hasher = new PasswordHasher<User>();
-    var result = hasher.VerifyHashedPassword(
-        user,
-        user.Password!,
-        userDTO.Password
-    );
-
-    if (result == PasswordVerificationResult.Failed)
-        return Results.Unauthorized();
+    var result = hasher.VerifyHashedPassword(user, user.Password!, userDTO.Password);
+    if (result == PasswordVerificationResult.Failed) return Results.Unauthorized();
 
     if (result == PasswordVerificationResult.SuccessRehashNeeded)
     {
@@ -177,30 +177,85 @@ static async Task<IResult> JTWUserLogin(
         await db.SaveChangesAsync();
     }
 
-    var claims = new[]
+    var now = DateTime.UtcNow;
+    var accessToken = CreateAccessToken(user, configuration, now, minutes: 30);
+    var refreshToken = GenerateRefreshToken();
+    var refreshTokenHash = Sha256(refreshToken);
+    var refreshEntity = new RefreshToken
     {
-        new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-        new Claim(JwtRegisteredClaimNames.UniqueName, user.Name!),
-        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        UserId = user.Id,
+        TokenHash = refreshTokenHash,
+        CreatedUtc = now,
+        ExpiresUtc = now.AddDays(14)
     };
 
-    var key = new SymmetricSecurityKey(
-        System.Text.Encoding.UTF8.GetBytes(configuration["JwtConfig:Key"]!)
-    );
-
-    var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-    var token = new JwtSecurityToken(
-        issuer: configuration["JwtConfig:Issuer"],
-        audience: configuration["JwtConfig:Audience"],
-        claims: claims,
-        expires: DateTime.UtcNow.AddMinutes(30),
-        signingCredentials: creds
-    );
+    db.RefreshTokens.Add(refreshEntity);
+    await db.SaveChangesAsync();
 
     return Results.Ok(new
     {
-        token = new JwtSecurityTokenHandler().WriteToken(token),
-        expires = token.ValidTo
+        accessToken,
+        accessExpires = now.AddMinutes(30),
+        refreshToken = refreshToken,
+        refreshExpires = refreshEntity.ExpiresUtc
     });
+}
+
+static async Task<IResult> RefreshAccessToken(
+    RefreshRequestDTO dto,
+    UserContext db,
+    IConfiguration configuration)
+{
+    if (string.IsNullOrWhiteSpace(dto.RefreshToken))
+        return Results.BadRequest("RefreshToken required");
+
+    var now = DateTime.UtcNow;
+    var incomingHash = Sha256(dto.RefreshToken);
+    var stored = await db.RefreshTokens
+        .Include(rt => rt.User)
+        .SingleOrDefaultAsync(rt => rt.TokenHash == incomingHash);
+
+    if (stored is null || !stored.IsActive)
+        return Results.Unauthorized();
+
+    var user = stored.User;
+    stored.RevokedUtc = now;
+
+    var newPlain = GenerateRefreshToken();
+    var newHash = Sha256(newPlain);
+    var replacement = new RefreshToken
+    {
+        UserId = user.Id,
+        TokenHash = newHash,
+        CreatedUtc = now,
+        ExpiresUtc = now.AddDays(14)
+    };
+    db.RefreshTokens.Add(replacement);
+    await db.SaveChangesAsync();
+    var accessToken = CreateAccessToken(user, configuration, now, minutes: 30);
+    return Results.Ok(new
+    {
+        accessToken,
+        accessExpires = now.AddMinutes(30),
+        refreshToken = newPlain,
+        refreshExpires = replacement.ExpiresUtc
+    });
+}
+
+static async Task<IResult> LogoutRefreshToken(
+    RefreshRequestDTO dto,
+    UserContext db)
+{
+    if (string.IsNullOrWhiteSpace(dto.RefreshToken))
+        return Results.BadRequest("RefreshToken required");
+
+    var hash = Sha256(dto.RefreshToken);
+
+    var stored = await db.RefreshTokens.SingleOrDefaultAsync(rt => rt.TokenHash == hash);
+    if (stored is null) return Results.Ok();
+
+    stored.RevokedUtc = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.Ok("Logged out");
 }

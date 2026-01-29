@@ -5,21 +5,98 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZeroAPI Docs</title>
     <style>
-        body {
-            font-family: sans-serif;
-            max-width: 900px;
-            margin: 40px auto;
-            line-height: 1.6;
-        }
-        code {
-            background-color: #eee;
-            padding: 4px 6px;
-            border-radius: 4px;
-            display: block;
-            margin-top: 6px;
-            white-space: pre-wrap;
-        }
-    </style>
+    :root {
+        --bg: #fafafa;
+        --card: #ffffff;
+        --text: #1f2937;
+        --muted: #6b7280;
+        --border: #e5e7eb;
+        --accent: #6366f1;
+        --code-bg: #f3f4f6;
+        --radius: 12px;
+    }
+    body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                     Roboto, Ubuntu, "Helvetica Neue", Arial, sans-serif;
+        background-color: var(--bg);
+        color: var(--text);
+        max-width: 920px;
+        margin: 48px auto;
+        padding: 0 20px;
+        line-height: 1.65;
+    }
+
+    header {
+        margin-bottom: 32px;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 16px;
+    }
+
+    h1 {
+        font-size: 2.2rem;
+        letter-spacing: -0.02em;
+        margin-bottom: 6px;
+    }
+
+    h3 {
+        margin-top: 36px;
+        font-size: 1.4rem;
+        letter-spacing: -0.01em;
+        border-left: 4px solid var(--accent);
+        padding-left: 12px;
+    }
+
+    p {
+        margin: 14px 0;
+        color: var(--text);
+    }
+
+    strong code {
+        display: inline-block;
+        background-color: var(--code-bg);
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 0.9em;
+    }
+
+    code {
+        background-color: var(--code-bg);
+        border: 1px solid var(--border);
+        padding: 12px 14px;
+        border-radius: var(--radius);
+        display: block;
+        margin-top: 10px;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+                     "Liberation Mono", "Courier New", monospace;
+        font-size: 0.9rem;
+        color: #111827;
+    }
+
+    ul {
+        margin-top: 10px;
+        padding-left: 22px;
+    }
+
+    li {
+        margin: 6px 0;
+        color: var(--muted);
+    }
+    h3 + p,
+    h3 + p + p,
+    h3 + p + p + p,
+    h3 + p + p + p + p {
+        background-color: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+        margin-top: 14px;
+    }
+    html {
+        scroll-behavior: smooth;
+    }
+</style>
+
 </head>
 <body>
     <header>
@@ -27,18 +104,23 @@
     </header>
 
     <p>
-        Current endpoint
-        <strong><code>GET /docs</code></strong> 
+        Root endpoint:
+        <strong><code>GET /</code></strong> — Redirects users to documentation
+    </p>
+
+    <p>
+        Documentation endpoint:
+        <strong><code>GET /docs</code></strong>
     </p>
 
     <h3>Users</h3>
 
     <p>
-        <strong>GET /users</strong> — List all users
+        <strong>GET /users</strong> — List all registered users
     </p>
 
     <p>
-        <strong>POST /users/register</strong> — Register a user
+        <strong>POST /users/register</strong> — Register a new user
         <code>
 curl -X POST <span class="base-url"></span>/users/register \
 -H "Content-Type: application/json" \
@@ -47,30 +129,51 @@ curl -X POST <span class="base-url"></span>/users/register \
     </p>
 
     <p>
-        <strong>POST /users/login</strong> — Authenticate as a user
+        <strong>POST /users/login</strong> — Authenticate and receive an access token and refresh token
         <code>
 curl -X POST <span class="base-url"></span>/users/login \
 -H "Content-Type: application/json" \
 -d "{\"Name\":\"test\",\"Password\":\"test\"}"
         </code>
     </p>
-    <h3>JWT Authentication</h3>
 
     <p>
-        <strong>POST /users/login-jwt</strong> — Authenticate and receive a JWT
+        <strong>POST /users/refresh</strong> — Exchange a refresh token for a new access token
         <code>
-curl -X POST <span class="base-url"></span>/users/login-jwt \
+curl -X POST <span class="base-url"></span>/users/refresh \
 -H "Content-Type: application/json" \
--d "{\"Name\":\"test\",\"Password\":\"test\"}"
+-d "{\"RefreshToken\":\"YOUR_REFRESH_TOKEN\"}"
         </code>
     </p>
+
     <p>
-        <strong>GET /users/account-jwt</strong> — Get current user info (requires JWT)
+        <strong>POST /users/logout</strong> — Revoke a refresh token (log out)
         <code>
-curl <span class="base-url"></span>/users/account-jwt \
--H "Authorization: Bearer YOUR_JWT_TOKEN"
+curl -X POST <span class="base-url"></span>/users/logout \
+-H "Content-Type: application/json" \
+-d "{\"RefreshToken\":\"YOUR_REFRESH_TOKEN\"}"
         </code>
     </p>
+
+    <h3>Protected</h3>
+
+    <p>
+        <strong>GET /protected</strong> — Test protected endpoint (requires JWT)
+        <code>
+curl <span class="base-url"></span>/protected \
+-H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+        </code>
+    </p>
+
+    <p>
+        Notes:
+        <ul>
+            <li>All protected endpoints require a valid JWT access token</li>
+            <li>Invalid or expired tokens return <code>401 Unauthorized</code></li>
+            <li>Access tokens are short-lived; use refresh tokens to obtain new ones</li>
+        </ul>
+    </p>
+
     <script>
         const baseUrl = window.location.origin;
 
